@@ -29,6 +29,8 @@ jobs:
           dpkg-query -W libc6 libdw1t64 libelf1t64 libssl3t64 zlib1g coreutils
       - name: Authenticate and extract exact target headers
         run: timeout 180s python3 .github/scripts/prepare_headers.py
+      - name: Authenticate and extract exact old control headers
+        run: timeout 180s python3 .github/scripts/prepare_old_headers.py
       - name: Fetch pinned RXE source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:

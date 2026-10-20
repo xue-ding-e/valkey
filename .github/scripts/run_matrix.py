@@ -11,13 +11,13 @@ def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 assert sha(patch)=='4c71f6911bd8be4a98a770187811efccc7676b903bce83c045c6fbc0d6a280a5'
 assert sha(source/'rxe_net.c')==base_hash
 assert subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()=='cdcd539ade4e2797bcc4da9161a26feca997a9a4'
-old=pathlib.Path('/usr/src/linux-headers-6.17.0-1022-azure')
+old=pathlib.Path(os.environ['RXE_OLD_HEADERS'])
 new=pathlib.Path(os.environ['RXE_HEADERS'])
 if not (old/'include/config/kernel.release').is_file():
     raise RuntimeError('BLOCKED_OLD_HEADER: exact 6.17.0-1022-azure headers unavailable; no old-API claim')
 assert (old/'include/config/kernel.release').read_text().strip()=='6.17.0-1022-azure'
 assert (new/'include/config/kernel.release').read_text().strip()=='7.0.0-1017-azure'
-subprocess.run(['dpkg-query','-W','linux-headers-6.17.0-1022-azure'],check=True)
+print('OLD_HEADERS_AUTHENTICATED_WORKSPACE',str(old),flush=True)
 print('BASELINE_SHA256',base_hash,'CANDIDATE_SHA256',candidate_hash,flush=True)
 # Negative control: a nonexistent header tree must fail before classification.
 negative=subprocess.run(['python3',str(scripts/'probe_api.py'),str(root/'missing-headers'),'missing'],capture_output=True,text=True)
