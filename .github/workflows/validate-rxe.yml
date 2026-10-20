@@ -1,0 +1,51 @@
+name: RXE header compile-only validation
+on:
+  push:
+    branches: [qa/rxe-header-compile-20261020]
+permissions:
+  contents: read
+concurrency:
+  group: rxe-header-compile-only
+  cancel-in-progress: false
+jobs:
+  compile:
+    if: github.repository == 'xue-ding-e/valkey' && github.ref == 'refs/heads/qa/rxe-header-compile-20261020' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Read exact runner/header identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          printf 'ImageOS=%s ImageVersion=%s\n' "$ImageOS" "$ImageVersion"
+          test "$(uname -r)" = '7.0.0-1017-azure'
+          test -f /usr/src/linux-headers-7.0.0-1017-azure/include/net/udp_tunnel.h
+          dpkg-query -W 'linux-headers-7.0.0-1017*'
+          readlink -f /lib/modules/7.0.0-1017-azure/build
+          cc --version
+          grep -n -A2 -B2 'setup_udp_tunnel_sock\|udp_tunnel_sock_release' /usr/src/linux-headers-7.0.0-1017-azure/include/net/udp_tunnel.h
+      - name: Fetch pinned RXE source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: pizhenwei/rxe
+          ref: cdcd539ade4e2797bcc4da9161a26feca997a9a4
+          path: rxe
+          persist-credentials: false
+      - name: Reproduce baseline compiler failure without loading a module
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C rxe rev-parse HEAD)" = 'cdcd539ade4e2797bcc4da9161a26feca997a9a4'
+          set +e
+          timeout 300s make -j2 -C /usr/src/linux-headers-7.0.0-1017-azure M="$GITHUB_WORKSPACE/rxe" modules > baseline.log 2>&1
+          status=$?
+          set -e
+          cat baseline.log
+          test "$status" -ne 0
+          test "$status" -ne 124
+          grep -F 'setup_udp_tunnel_sock' baseline.log
+          grep -F 'incompatible pointer type' baseline.log
+          grep -F 'struct socket *' baseline.log
+          grep -F 'struct sock *' baseline.log
+          echo 'EXPECTED_BASELINE_RED: incompatible RXE UDP setup signature reproduced; no candidate tested.'
