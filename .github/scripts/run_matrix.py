@@ -6,9 +6,9 @@ source=pathlib.Path('rxe').resolve()
 scripts=pathlib.Path('.github/scripts').resolve()
 patch=scripts/'rxe-api-candidate.patch'
 base_hash='71783310ffa375ed24482816003bcb90bf10e27d5c28dd92a22af6f57df297ec'
-candidate_hash='457ed93676993c370c9c9dbf20250bc5ff59ada3b5969a05f45d4ef03fc340a3'
+candidate_hash='4ed66bd00d2f390cd5431e529859c5b7fb9a2b0529555ff8bc27d7e2b2ce54c3'
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
-assert sha(patch)=='1855f251bc56417fe42cac2706cba24bedf07409d0a0206687233988f9d22c53'
+assert sha(patch)=='4c71f6911bd8be4a98a770187811efccc7676b903bce83c045c6fbc0d6a280a5'
 assert sha(source/'rxe_net.c')==base_hash
 assert subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip()=='cdcd539ade4e2797bcc4da9161a26feca997a9a4'
 old=pathlib.Path('/usr/src/linux-headers-6.17.0-1022-azure')
