@@ -1,4 +1,4 @@
-name: RXE header compile-only validation
+name: RXE authenticated header compile-only validation
 on:
   push:
     branches: [qa/rxe-header-compile-20261020]
@@ -13,18 +13,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Read exact runner/header identity
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Check host tools without installing anything
         shell: bash
         run: |
           set -euo pipefail
+          echo 'HOST ONLY (not the compile target):'
           uname -a
           printf 'ImageOS=%s ImageVersion=%s\n' "$ImageOS" "$ImageVersion"
-          test "$(uname -r)" = '7.0.0-1017-azure'
-          test -f /usr/src/linux-headers-7.0.0-1017-azure/include/net/udp_tunnel.h
-          dpkg-query -W 'linux-headers-7.0.0-1017*'
-          readlink -f /lib/modules/7.0.0-1017-azure/build
-          cc --version
-          grep -n -A2 -B2 'setup_udp_tunnel_sock\|udp_tunnel_sock_release' /usr/src/linux-headers-7.0.0-1017-azure/include/net/udp_tunnel.h
+          for tool in python3 gpgv dpkg-deb gcc-13 make ld ldd; do command -v "$tool"; done
+          test -r /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          gcc-13 --version
+          dpkg-query -W libc6 libdw1t64 libelf1t64 libssl3t64 zlib1g coreutils
+      - name: Authenticate and extract exact target headers
+        run: timeout 180s python3 .github/scripts/prepare_headers.py
       - name: Fetch pinned RXE source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -37,8 +41,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C rxe rev-parse HEAD)" = 'cdcd539ade4e2797bcc4da9161a26feca997a9a4'
+          echo 'TARGET: authenticated Ubuntu 7.0.0-1017.17~24.04.1 headers'
+          cat "$RXE_HEADERS/include/config/kernel.release"
+          grep -n -A2 -B2 'setup_udp_tunnel_sock\|udp_tunnel_sock_release' "$RXE_HEADERS/include/net/udp_tunnel.h"
           set +e
-          timeout 300s make -j2 -C /usr/src/linux-headers-7.0.0-1017-azure M="$GITHUB_WORKSPACE/rxe" modules > baseline.log 2>&1
+          timeout 300s make -j2 -C "$RXE_HEADERS" M="$GITHUB_WORKSPACE/rxe" CC=gcc-13 modules > baseline.log 2>&1
           status=$?
           set -e
           cat baseline.log
