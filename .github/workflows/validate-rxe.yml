@@ -1,4 +1,4 @@
-name: RXE authenticated header compile-only validation
+name: RXE serial compatibility compile-only matrix
 on:
   push:
     branches: [qa/rxe-header-compile-20261020]
@@ -11,7 +11,7 @@ jobs:
   compile:
     if: github.repository == 'xue-ding-e/valkey' && github.ref == 'refs/heads/qa/rxe-header-compile-20261020' && github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -36,23 +36,7 @@ jobs:
           ref: cdcd539ade4e2797bcc4da9161a26feca997a9a4
           path: rxe
           persist-credentials: false
-      - name: Reproduce baseline compiler failure without loading a module
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git -C rxe rev-parse HEAD)" = 'cdcd539ade4e2797bcc4da9161a26feca997a9a4'
-          echo 'TARGET: authenticated Ubuntu 7.0.0-1017.17~24.04.1 headers'
-          cat "$RXE_HEADERS/include/config/kernel.release"
-          grep -n -A2 -B2 'setup_udp_tunnel_sock\|udp_tunnel_sock_release' "$RXE_HEADERS/include/net/udp_tunnel.h"
-          set +e
-          timeout 300s make -j2 -C "$RXE_HEADERS" M="$GITHUB_WORKSPACE/rxe" CC=gcc-13 modules > baseline.log 2>&1
-          status=$?
-          set -e
-          cat baseline.log
-          test "$status" -ne 0
-          test "$status" -ne 124
-          grep -F 'setup_udp_tunnel_sock' baseline.log
-          grep -F 'incompatible pointer type' baseline.log
-          grep -F 'struct socket *' baseline.log
-          grep -F 'struct sock *' baseline.log
-          echo 'EXPECTED_BASELINE_RED: incompatible RXE UDP setup signature reproduced; no candidate tested.'
+      - name: Serial real-header baseline and candidate matrix
+        env:
+          CC: gcc-13
+        run: timeout 600s python3 .github/scripts/run_matrix.py

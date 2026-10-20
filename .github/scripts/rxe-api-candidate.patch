@@ -1,0 +1,38 @@
+--- a/rxe_net.c
++++ b/rxe_net.c
+@@ -197,15 +197,33 @@
+ 	tnl_cfg.encap_rcv = rxe_udp_encap_recv;
+ 
+ 	/* Setup UDP tunnel */
+-	setup_udp_tunnel_sock(net, sock, &tnl_cfg);
++	/* Downstream kernels may backport this API independently of the
++	 * release API. Select by the declared type, not the kernel version.
++	 * An unknown signature must fail compilation rather than guess.
++	 */
++	static_assert(__builtin_types_compatible_p(typeof(&setup_udp_tunnel_sock),
++		void (*)(struct net *, struct socket *, struct udp_tunnel_sock_cfg *)) ||
++		__builtin_types_compatible_p(typeof(&setup_udp_tunnel_sock),
++		void (*)(struct net *, struct sock *, struct udp_tunnel_sock_cfg *)));
++	setup_udp_tunnel_sock(net,
++		__builtin_choose_expr(__builtin_types_compatible_p(
++			typeof(&setup_udp_tunnel_sock),
++			void (*)(struct net *, struct socket *, struct udp_tunnel_sock_cfg *)),
++			sock, sock->sk), &tnl_cfg);
+ 
+ 	return sock;
+ }
+ 
+ static void rxe_release_udp_tunnel(struct socket *sk)
+ {
++	static_assert(__builtin_types_compatible_p(typeof(&udp_tunnel_sock_release),
++		void (*)(struct socket *)) ||
++		__builtin_types_compatible_p(typeof(&udp_tunnel_sock_release),
++		void (*)(struct sock *)));
+ 	if (sk)
+-		udp_tunnel_sock_release(sk);
++		udp_tunnel_sock_release(__builtin_choose_expr(
++			__builtin_types_compatible_p(typeof(&udp_tunnel_sock_release),
++				void (*)(struct socket *)), sk, sk->sk));
+ }
+ 
+ static void prepare_udp_hdr(struct sk_buff *skb, __be16 src_port,
