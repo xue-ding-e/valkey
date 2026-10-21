@@ -1,4 +1,4 @@
-name: RXE upstream snapshot exact-header compile-only validation
+name: RXE pinned upstream snapshot old-header RED validation
 on:
   push:
     branches: [qa/rxe-header-compile-20261020]
@@ -28,7 +28,7 @@ jobs:
           gcc-13 --version
           dpkg-query -W libc6 libdw1t64 libelf1t64 libssl3t64 zlib1g coreutils
       - name: Authenticate and extract exact target headers
-        run: timeout -k 10s 180s python3 .github/scripts/prepare_headers.py
+        run: timeout -k 10s 180s python3 .github/scripts/prepare_old_headers.py
       - name: Fetch pinned RXE source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -36,21 +36,30 @@ jobs:
           ref: f855356f373337c5e482fd487030e58778d6aaac
           path: rxe
           persist-credentials: false
-      - name: Validate upstream snapshot without loading a module
+      - name: Reproduce old-header compile failure without loading a module
         shell: bash
+        env:
+          LC_ALL: C
         run: |
           set -euo pipefail
           test "$(git -C rxe rev-parse HEAD)" = 'f855356f373337c5e482fd487030e58778d6aaac'
-          echo 'TARGET: authenticated Ubuntu 7.0.0-1017.17~24.04.1 headers; no 6.17 compatibility claim'
-          test "$(cat "$RXE_HEADERS/include/config/kernel.release")" = '7.0.0-1017-azure'
-          timeout -k 10s 180s python3 .github/scripts/probe_api.py "$RXE_HEADERS" 7.0.0-1017-azure
+          echo 'TARGET: authenticated Ubuntu 6.17.0-1022.22 headers; host kernel is not the compile target'
+          test "$(cat "$RXE_OLD_HEADERS/include/config/kernel.release")" = '6.17.0-1022-azure'
+          timeout -k 10s 180s python3 .github/scripts/probe_api.py "$RXE_OLD_HEADERS" 6.17.0-1022-azure
           set +e
-          timeout -k 10s 300s make -j2 -C "$RXE_HEADERS" M="$GITHUB_WORKSPACE/rxe" CC=gcc-13 modules > upstream-build.log 2>&1
+          timeout -k 10s 300s make -j2 -C "$RXE_OLD_HEADERS" M="$GITHUB_WORKSPACE/rxe" CC=gcc-13 modules > upstream-old-build.log 2>&1
           status=$?
           set -e
-          cat upstream-build.log
-          echo "UPSTREAM_BUILD_EXIT=$status"
-          test "$status" -eq 0
-          test -s rxe/rdma_rxe.ko
-          sha256sum rxe/rdma_rxe.ko
-          echo 'UPSTREAM_COMPILE_GREEN: exact source and headers only; no module installation/load, runtime or performance tests; see log for BTF/pahole warnings.'
+          cat upstream-old-build.log
+          echo "UPSTREAM_OLD_BUILD_EXIT=$status"
+          test "$status" -eq 2
+          test ! -e rxe/rdma_rxe.ko
+          python3 - <<'PYCLASSIFY'
+          import pathlib, re
+          text = pathlib.Path('upstream-old-build.log').read_text()
+          errors = [line for line in text.splitlines() if re.search(r'\berror:', line)]
+          assert errors, 'BLOCKED: no compiler error diagnostic; not the expected RED'
+          assert all('rxe_queue.c:66:' in line and 'implicit declaration of function' in line and 'kzalloc_obj' in line and '[-Werror=implicit-function-declaration]' in line for line in errors), errors
+          assert 'q = kzalloc_obj(*q);' in text, 'BLOCKED: missing source diagnostic'
+          print('EXPECTED_COMPILE_RED: pinned f855356 fails on exact 6.17 headers at kzalloc_obj. Workflow success means reproduced failure, not successful RXE build. No installation, load, runtime, performance, or snapshot-selection validation.')
+          PYCLASSIFY
