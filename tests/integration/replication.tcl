@@ -709,6 +709,17 @@ foreach testType {Successful Aborted} dualchannel {yes no} {
                         assert_equal [s -1 async_loading] 0
                     }
 
+                    test "DEBUG reload commands are blocked during loading dual-channel=$dualchannel" {
+                        # Fail if the existing slow-load window ended; do not
+                        # mistake a command outside loading for a gate check.
+                        assert_equal [s -1 loading] 1
+                        assert_error {LOADING*} {$replica debug reload}
+                        assert_equal [s -1 loading] 1
+                        assert_error {LOADING*} {$replica debug loadaof}
+                        assert_equal [s -1 loading] 1
+                        assert_equal [s -1 async_loading] 0
+                    }
+
                     # Make sure that next sync will not start immediately so that we can catch the replica in between syncs
                     $master config set repl-diskless-sync-delay 5
 
@@ -879,6 +890,15 @@ foreach testType {Successful Aborted} {
                     test {Blocked commands and configs during async-loading} {
                         assert_error {LOADING*} {$replica config set appendonly no}
                         assert_error {LOADING*} {$replica REPLICAOF no one}
+                        # Verify the real loading state around both commands,
+                        # using the existing slow-load window without a sleep.
+                        assert_equal [s -1 async_loading] 1
+                        assert_equal [s -1 loading] 0
+                        assert_error {LOADING*} {$replica debug reload}
+                        assert_equal [s -1 async_loading] 1
+                        assert_error {LOADING*} {$replica debug loadaof}
+                        assert_equal [s -1 async_loading] 1
+                        assert_equal [s -1 loading] 0
                     }
 
                     test {MODULE LOAD and LOADEX are blocked during async-loading} {
