@@ -1,87 +1,29 @@
-name: Independent PR 4808 ELF32 validation
+name: Isolated DEBUG loading replication regression
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: valkey-4808-elf32
+  group: valkey-loading-regression-20261028
   cancel-in-progress: false
 jobs:
   validate:
-    name: Author patch verification, not a product branch
+    if: github.repository == 'xue-ding-e/valkey' && github.ref == 'refs/heads/qa/loading-regression-20261028' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
-      - name: Checkout exact upstream base
+      - name: Checkout isolated validation controls
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          path: qa
+          persist-credentials: false
+      - name: Checkout exact official source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: valkey-io/valkey
-          ref: ff9481cfbee0ebb3237404705e3e8fc6cf122f8c
-          path: base
+          ref: f2ca837edc75e2238f880d89ade60babb6e6ed9e
+          path: v
           persist-credentials: false
-      - name: Checkout exact contributor head
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          repository: valkey-io/valkey
-          ref: 004dfdb656903b3efbe132d54b8ab2aa07b25c1e
-          path: head
-          persist-credentials: false
-      - name: Install official Ubuntu 32-bit build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gcc-multilib libc6-dev-i386 tcl8.6 tclx cmake
-      - name: Verify sources and install identical regression tests
-        run: |
-          test "$(git -C base rev-parse HEAD)" = ff9481cfbee0ebb3237404705e3e8fc6cf122f8c
-          test "$(git -C head rev-parse HEAD)" = 004dfdb656903b3efbe132d54b8ab2aa07b25c1e
-          echo 'Copying only the contributor regression test file into the base harness; product source unchanged.'
-          cp head/tests/unit/type/stream.tcl base/tests/unit/type/stream.tcl
-          git -C base diff --stat
-          git -C base diff --exit-code -- src deps
-          git -C head diff --exit-code
-      - name: Build both real 32-bit servers
-        run: |
-          for tree in base head; do
-            echo "Building $tree"
-            make -C "$tree" -j2 all CFLAGS=-m32 LDFLAGS=-m32 MALLOC=libc OPTIMIZATION=-O2 DEBUG= USE_SYSTEMD=no USE_LIBBACKTRACE=no BUILD_TLS=no BUILD_RDMA=no BUILD_ZSTD=no
-            file "$tree/src/valkey-server"
-            readelf -h "$tree/src/valkey-server" | tee "$tree/elf-header.log"
-            grep -Eq 'Class:[[:space:]]+ELF32' "$tree/elf-header.log"
-            grep -Eq 'Machine:[[:space:]]+Intel 80386' "$tree/elf-header.log"
-            "$tree/src/valkey-server" --version
-          done
-      - name: Red - original server must fail the exact upstream regression
-        shell: bash
-        run: |
-          cd base
-          set +e
-          ./runtest --single unit/type/stream --only 'XTRIM and XADD with MAXLEN of 2^32 or more do not trim' --clients 1 --timeout 120 --verbose > regression.log 2>&1
-          result=$?
-          set -e
-          cat regression.log
-          test "$result" -ne 0
-          grep -F '[err]: XTRIM and XADD with MAXLEN of 2^32 or more do not trim' regression.log
-          grep -F "Expected '0' to be equal to '2'" regression.log
-          echo 'RED VERIFIED: real ELF32 base fails with the specific MAXLEN truncation assertion.'
-      - name: Green - contributor server must pass the same upstream regression
-        shell: bash
-        run: |
-          cd head
-          ./runtest --single unit/type/stream --only 'XTRIM and XADD with MAXLEN of 2^32 or more do not trim' --clients 1 --timeout 120 --verbose > regression.log 2>&1
-          cat regression.log
-          grep -F '[ok]: XTRIM and XADD with MAXLEN of 2^32 or more do not trim' regression.log
-          echo 'GREEN VERIFIED: real ELF32 contributor head passes the upstream regression.'
-      - name: Zero threshold control cases
-        shell: bash
-        run: |
-          cd head
-          ./runtest --single unit/type/stream --only 'XTRIM with MAXLEN 0 keeps an empty stream key' --only 'XADD can CREATE an empty stream' --clients 1 --timeout 120 --verbose > controls.log 2>&1
-          cat controls.log
-          grep -F '[ok]: XTRIM with MAXLEN 0 keeps an empty stream key' controls.log
-          grep -F '[ok]: XADD can CREATE an empty stream' controls.log
-      - name: Print failure diagnostics
-        if: failure()
-        run: |
-          for log in base/regression.log head/regression.log head/controls.log; do
-            if test -f "$log"; then echo "===== $log ====="; tail -150 "$log"; fi
-          done
+      - name: Serial bounded build and real replication suite
+        run: python3 qa/.github/scripts/validate-loading.py
