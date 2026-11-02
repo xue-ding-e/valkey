@@ -1,0 +1,68 @@
+name: Pinned Valkey 9.1.3 paired-history metadata observation
+on:
+  push:
+    branches: [qa/watch-metadata-alias-913-20261102]
+permissions:
+  contents: read
+concurrency:
+  group: valkey-watch-metadata-alias-913-20261102
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: >-
+      github.repository == 'xue-ding-e/valkey' &&
+      github.ref == 'refs/heads/qa/watch-metadata-alias-913-20261102' &&
+      github.event_name == 'push' &&
+      github.event.before == '032ada65f5c9382b275c3c119c89537649068446' &&
+      github.event.created == false && github.event.deleted == false &&
+      github.event.forced == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact control after SHA, without persistent credentials
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          path: qa
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Prove exact one-parent transition and four-file allowlist before helper execution
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          test "$BEFORE" = 032ada65f5c9382b275c3c119c89537649068446
+          [[ "$AFTER" =~ ^[0-9a-f]{40}$ ]]
+          test "$AFTER" = "$GITHUB_SHA"
+          test "$(git -C qa rev-parse HEAD)" = "$AFTER"
+          test "$(git -C qa show -s --format=%P HEAD)" = "$BEFORE"
+          test -z "$(git -C qa status --porcelain --untracked-files=all)"
+          printf '%s\n' \
+            '.github/probes/watch_metadata_alias_contract.tcl' \
+            '.github/scripts/test_watch_metadata913.py' \
+            '.github/scripts/watch_metadata913.py' \
+            '.github/workflows/validate-watch-metadata-913.yml' > "$RUNNER_TEMP/watchmeta913-allowed"
+          git -C qa diff-tree --no-commit-id --name-only -r HEAD | LC_ALL=C sort > "$RUNNER_TEMP/watchmeta913-actual"
+          diff -u "$RUNNER_TEMP/watchmeta913-allowed" "$RUNNER_TEMP/watchmeta913-actual"
+          test "$(git -C qa diff-tree --no-commit-id --name-status -r HEAD | cut -f1 | sort -u)" = A
+          git -C qa diff --exit-code "$BEFORE" HEAD -- \
+            .github/workflows/validate-4808.yml \
+            .github/probes/watch_resume_contract.tcl \
+            .github/scripts/test_watch913.py \
+            .github/scripts/watch913.py \
+            .github/workflows/validate-watch-913.yml
+          printf '%s\n' "CONTROL_BEFORE=$BEFORE" "CONTROL_AFTER=$AFTER"
+      - name: Run offline guard tests only
+        run: python3 qa/.github/scripts/test_watch_metadata913.py
+      - name: Checkout exact official 9.1.3 harness
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: valkey-io/valkey
+          ref: 29173b67508b2de4c0f0ed551f3b47cf19fc3ca8
+          path: v
+          persist-credentials: false
+      - name: Verify official package, resolve libraries, observe one synthetic paired-history case
+        timeout-minutes: 3
+        run: python3 qa/.github/scripts/watch_metadata913.py
